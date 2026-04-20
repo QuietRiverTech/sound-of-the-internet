@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sound of the Internet — Shodan Sonification</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --purple: #6366f1;
+  --cyan: #06b6d4;
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface2: #1a1a2e;
+  --text: #e2e8f0;
+  --text-dim: #64748b;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --success: #10b981;
+}
+body {
+  font-family: 'Courier New', monospace;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+/* INPUT PANEL */
+.input-panel {
+  background: var(--surface);
+  border-bottom: 1px solid var(--purple);
+  padding: 12px 20px;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  box-shadow: 0 4px 20px rgba(99,102,241,0.1);
+}
+.input-panel input[type="text"] {
+  background: var(--bg);
+  border: 1px solid var(--purple);
+  color: var(--cyan);
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  flex: 1; min-width: 200px;
+}
+.input-panel input[type="text"]::placeholder { color: var(--text-dim); }
+.input-panel input[type="text"]:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 10px rgba(6,182,212,0.3); }
+.btn {
+  background: linear-gradient(135deg, var(--purple), #4f46e5);
+  color: white; border: none; padding: 8px 16px;
+  border-radius: 4px; cursor: pointer; font-family: inherit;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+  transition: all 0.2s;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(99,102,241,0.4); }
+.btn:active { transform: translateY(0); }
+.btn-cyan { background: linear-gradient(135deg, var(--cyan), #0891b2); }
+.btn-small { padding: 6px 10px; font-size: 10px; }
+.btn-danger { background: linear-gradient(135deg, var(--danger), #dc2626); }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.controls-row { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+.control-group { display: flex; align-items: center; gap: 6px; }
+.control-group label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+.control-group select, .control-group input[type="range"] {
+  background: var(--bg); border: 1px solid var(--purple);
+  color: var(--text); padding: 4px 8px; border-radius: 3px;
+  font-family: inherit; font-size: 11px;
+}
+input[type="range"] { -webkit-appearance: none; height: 4px; border-radius: 2px; cursor: pointer; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--cyan); }
+
+/* MAIN AREA */
+.main-area { display: flex; flex: 1; overflow: hidden; }
+
+/* VISUALIZER */
+.visualizer-container {
+  flex: 1; position: relative; display: flex; flex-direction: column;
+}
+#visualizer {
+  width: 100%; flex: 1; display: block;
+}
+.host-overlay {
+  position: absolute; top: 20px; left: 20px;
+  background: rgba(10,10,15,0.85);
+  border: 1px solid var(--purple);
+  border-radius: 6px; padding: 12px 16px;
+  font-size: 11px; max-width: 300px;
+  backdrop-filter: blur(5px);
+}
+.host-overlay .ip { color: var(--cyan); font-size: 16px; font-weight: bold; }
+.host-overlay .org { color: var(--text-dim); }
+.host-overlay .ports { color: var(--purple); margin-top: 4px; }
+.host-overlay .cves { color: var(--danger); margin-top: 2px; }
+.host-overlay .location { color: var(--success); margin-top: 2px; }
+
+/* NOW PLAYING */
+.now-playing {
+  background: var(--surface);
+  border-top: 1px solid var(--purple);
+  padding: 10px 20px;
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+}
+.transport { display: flex; gap: 8px; align-items: center; }
+.transport button {
+  background: var(--surface2); border: 1px solid var(--purple);
+  color: var(--text); width: 32px; height: 32px; border-radius: 50%;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; transition: all 0.2s;
+}
+.transport button:hover { background: var(--purple); }
+.transport button.active { background: var(--cyan); color: var(--bg); }
+.now-info { flex: 1; font-size: 11px; }
+.now-info .label { color: var(--text-dim); }
+.now-info .value { color: var(--cyan); }
+.progress-text { color: var(--text-dim); font-size: 11px; }
+.volume-control { display: flex; align-items: center; gap: 6px; }
+.volume-control label { font-size: 10px; color: var(--text-dim); }
+
+/* DATA PANEL */
+.data-panel {
+  width: 0; overflow: hidden; transition: width 0.3s;
+  background: var(--surface); border-left: 1px solid var(--purple);
+}
+.data-panel.open { width: 320px; }
+.data-panel-inner { width: 320px; padding: 12px; overflow-y: auto; height: 100%; }
+.data-panel h3 { color: var(--cyan); font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+.host-table { width: 100%; font-size: 10px; border-collapse: collapse; }
+.host-table th { color: var(--text-dim); text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--surface2); }
+.host-table td { padding: 4px 6px; border-bottom: 1px solid var(--surface2); }
+.host-table tr.active { background: rgba(99,102,241,0.2); }
+.host-table tr:hover { background: rgba(6,182,212,0.1); }
+.toggle-panel {
+  position: absolute; right: 0; top: 50%;
+  transform: translateY(-50%);
+  background: var(--surface2); border: 1px solid var(--purple);
+  color: var(--text); padding: 8px 4px; cursor: pointer;
+  border-radius: 4px 0 0 4px; font-size: 10px; z-index: 10;
+}
+.mini-map { width: 100%; height: 120px; margin-top: 10px; border: 1px solid var(--surface2); border-radius: 4px; }
+.note-mapping { margin-top: 10px; font-size: 10px; }
+.note-mapping .mapping-row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid var(--surface2); }
+.note-mapping .port-col { color: var(--cyan); }
+.note-mapping .note-col { color: var(--purple); }
+
+@media (max-width: 768px) {
+  .input-panel { padding: 8px 12px; }
+  .data-panel.open { width: 260px; }
+  .host-overlay { max-width: 200px; font-size: 10px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- INPUT PANEL -->
+  <div class="input-panel">
+    <input type="text" id="queryInput" placeholder="IP, CIDR range, or Shodan query (e.g. 'apache', 'port:445 country:US')">
+    <button class="btn" id="sonifyBtn">⚡ SONIFY</button>
+    <div class="presets">
+      <button class="btn btn-small btn-cyan" data-preset="random">Random IP</button>
+      <button class="btn btn-small btn-cyan" data-preset="scada">Industrial SCADA</button>
+      <button class="btn btn-small btn-cyan" data-preset="healthcare">Healthcare</button>
+      <button class="btn btn-small btn-cyan" data-preset="fortune500">Fortune 500</button>
+      <button class="btn btn-small btn-cyan" data-preset="iot">IoT Devices</button>
+      <button class="btn btn-small btn-cyan" data-preset="darkweb">Dark Web</button>
+    </div>
+    <div class="controls-row">
+      <div class="control-group">
+        <label>Tempo</label>
+        <input type="range" id="tempoSlider" min="60" max="180" value="90">
+        <span id="tempoValue" style="font-size:11px;color:var(--cyan);">90</span>
+      </div>
+      <div class="control-group">
+        <label>Scale</label>
+        <select id="scaleSelect">
+          <option value="pentatonic">Pentatonic (dreamy)</option>
+          <option value="minor" selected>Minor (dark)</option>
+          <option value="chromatic">Chromatic (chaotic)</option>
+          <option value="lydian">Lydian (sci-fi)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN AREA -->
+  <div class="main-area">
+    <div class="visualizer-container">
+      <canvas id="visualizer"></canvas>
+      <div class="host-overlay" id="hostOverlay" style="display:none;">
+        <div class="ip" id="overlayIp">—</div>
+        <div class="org" id="overlayOrg">—</div>
+        <div class="location" id="overlayLocation">—</div>
+        <div class="ports" id="overlayPorts">—</div>
+        <div class="cves" id="overlayCves">—</div>
+      </div>
+      <button class="toggle-panel" id="togglePanel">◀</button>
+    </div>
+    <div class="data-panel" id="dataPanel">
+      <div class="data-panel-inner">
+        <h3>Scan Results</h3>
+        <table class="host-table" id="hostTable">
+          <thead><tr><th>#</th><th>IP</th><th>Ports</th><th>Country</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <h3 style="margin-top:12px;">Port → Note Mapping</h3>
+        <div class="note-mapping" id="noteMapping"></div>
+        <h3 style="margin-top:12px;">Host Locations</h3>
+        <canvas class="mini-map" id="miniMap"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOW PLAYING -->
+  <div class="now-playing">
+    <div class="transport">
+      <button id="playPauseBtn" title="Play/Pause">▶</button>
+      <button id="skipBtn" title="Skip">⏭</button>
+      <button id="loopBtn" title="Loop">🔁</button>
+      <button id="recordBtn" title="Record" class="btn-danger-border">⏺</button>
+    </div>
+    <div class="now-info">
+      <span class="label">NOW: </span>
+      <span class="value" id="nowIp">—</span>
+      <span class="label"> | </span>
+      <span class="value" id="nowOrg">—</span>
+      <span class="label"> | </span>
+      <span class="value" id="nowCountry">—</span>
+    </div>
+    <div class="progress-text" id="progressText">Ready</div>
+    <div class="volume-control">
+      <label>VOL</label>
+      <input type="range" id="volumeSlider" min="0" max="100" value="70">
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ MUSICAL CONSTANTS ============
+const NOTE_FREQS = {
+  'C2': 65.41, 'D2': 73.42, 'E2': 82.41, 'F2': 87.31, 'F#2': 92.50, 'G2': 98.00, 'A2': 110.00, 'B2': 123.47,
+  'C3': 130.81, 'D3': 146.83, 'E3': 164.81, 'F3': 174.61, 'F#3': 185.00, 'G3': 196.00, 'A3': 220.00, 'B3': 246.94,
+  'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23, 'F#4': 369.99, 'G4': 392.00, 'A4': 440.00, 'B4': 493.88,
+  'C5': 523.25, 'D5': 587.33, 'E5': 659.25, 'F5': 698.46, 'G5': 783.99, 'A5': 880.00, 'B5': 987.77
+};
+
+const SCALES = {
+  pentatonic: ['C3','D3','E3','G3','A3','C4','D4','E4','G4','A4','C5','D5','E5'],
+  minor: ['C3','D3','E3','F3','G3','A3','B3','C4','D4','E4','F4','G4','A4','B4','C5'],
+  chromatic: ['C3','C#3','D3','D#3','E3','F3','F#3','G3','G#3','A3','A#3','B3','C4','C#4','D4','D#4','E4','F4','F#4','G4'],
+  lydian: ['C3','D3','E3','F#3','G3','A3','B3','C4','D4','E4','F#4','G4','A4','B4','C5']
+};
+// Add chromatic freqs
+['C#3','D#3','G#3','A#3','C#4','D#4'].forEach(n => {
+  const base = n.replace('#','');
+  const baseFreq = NOTE_FREQS[base];
+  if(baseFreq) NOTE_FREQS[n] = baseFreq * Math.pow(2, 1/12);
+});
+
+const PORT_NOTE_MAP = {
+  22: 'C3', 80: 'E3', 443: 'G3', 21: 'D3', 25: 'A3',
+  3389: 'B4', 445: 'F#3', 8080: 'C4', 3306: 'D4', 5432: 'E4',
+  23: 'F3', 53: 'G3', 110: 'A3', 143: 'B3', 993: 'C4',
+  8443: 'D4', 27017: 'E4', 6379: 'F4', 5900: 'G4',
+  502: 'C2', 102: 'D2', 44818: 'E2', 104: 'G4', 2575: 'A4',
+  11112: 'B4', 1883: 'C4', 5683: 'E4', 8883: 'G4',
+  9050: 'C3', 9150: 'D3'
+};
+
+const PORT_PROTOCOL = {
+  21:'FTP', 22:'SSH', 23:'Telnet', 25:'SMTP', 53:'DNS', 80:'HTTP', 110:'POP3',
+  143:'IMAP', 443:'HTTPS', 445:'SMB', 993:'IMAPS', 3306:'MySQL', 3389:'RDP',
+  5432:'Postgres', 5900:'VNC', 8080:'HTTP', 8443:'HTTPS', 27017:'MongoDB',
+  6379:'Redis', 502:'Modbus', 102:'S7', 44818:'EtherNet/IP',
+  104:'DICOM', 2575:'HL7', 11112:'DICOM', 1883:'MQTT', 5683:'CoAP',
+  8883:'MQTTS', 9050:'Tor', 9150:'Tor'
+};
+
+// ============ SIMULATED DATA ============
+const SIMULATED_DATA = {
+  random: [
+    {ip:'198.51.100.42',org:'CloudFlare Inc',country:'US',city:'San Francisco',lon:-122.4,lat:37.8,ports:[80,443,22,8080],cves:[{id:'CVE-2021-44228',score:10.0}]},
+    {ip:'203.0.113.7',org:'Amazon AWS',country:'US',city:'Ashburn',lon:-77.5,lat:39.0,ports:[443,80,22,3306,5432],cves:[{id:'CVE-2023-1234',score:6.5}]},
+    {ip:'192.0.2.15',org:'Google Cloud',country:'US',city:'Council Bluffs',lon:-95.8,lat:41.2,ports:[80,443],cves:[]},
+    {ip:'198.51.100.88',org:'Microsoft Azure',country:'NL',city:'Amsterdam',lon:4.9,lat:52.4,ports:[443,3389,445,135,139],cves:[{id:'CVE-2020-0796',score:8.1}]},
+    {ip:'203.0.113.200',org:'OVH SAS',country:'FR',city:'Paris',lon:2.3,lat:48.9,ports:[22,80,443,25,110,143],cves:[{id:'CVE-2022-5678',score:4.3}]},
+    {ip:'192.0.2.77',org:'DigitalOcean',country:'DE',city:'Frankfurt',lon:8.7,lat:50.1,ports:[80,443,8443,27017],cves:[{id:'CVE-2023-9876',score:7.5}]},
+    {ip:'198.51.100.33',org:'Hetzner',country:'DE',city:'Nuremberg',lon:11.1,lat:49.4,ports:[22,80,443],cves:[]},
+    {ip:'203.0.113.155',org:'Alibaba Cloud',country:'CN',city:'Shanghai',lon:121.5,lat:31.2,ports:[80,443,8080,3306,6379,27017],cves:[{id:'CVE-2021-3456',score:9.1},{id:'CVE-2022-1111',score:5.5}]},
+    {ip:'192.0.2.200',org:'NTT Communications',country:'JP',city:'Tokyo',lon:139.7,lat:35.7,ports:[22,80,443,25],cves:[]},
+    {ip:'198.51.100.99',org:'Linode',country:'GB',city:'London',lon:-0.1,lat:51.5,ports:[22,80,443,5432,6379],cves:[{id:'CVE-2023-4444',score:3.2}]},
+    {ip:'203.0.113.44',org:'Vultr',country:'AU',city:'Sydney',lon:151.2,lat:-33.9,ports:[80,443,22,8080,3000],cves:[]},
+    {ip:'192.0.2.123',org:'Scaleway',country:'FR',city:'Paris',lon:2.3,lat:48.9,ports:[22,80,443,25,587],cves:[{id:'CVE-2024-0001',score:5.8}]}
+  ],
+  scada: [
+    {ip:'10.0.1.100',org:'Siemens Industrial',country:'DE',city:'Munich',lon:11.6,lat:48.1,ports:[502,102],cves:[{id:'CVE-2019-13945',score:9.8}]},
+    {ip:'10.0.1.101',org:'Schneider Electric',country:'FR',city:'Grenoble',lon:5.7,lat:45.2,ports:[502,44818,80],cves:[{id:'CVE-2021-22779',score:8.5}]},
+    {ip:'10.0.2.50',org:'Allen-Bradley',country:'US',city:'Milwaukee',lon:-87.9,lat:43.0,ports:[44818,502],cves:[{id:'CVE-2020-6998',score:7.1}]},
+    {ip:'10.0.2.51',org:'GE Digital',country:'US',city:'Atlanta',lon:-84.4,lat:33.7,ports:[502,102,80,443],cves:[{id:'CVE-2022-33213',score:9.4},{id:'CVE-2022-33214',score:8.8}]},
+    {ip:'10.0.3.10',org:'ABB Ltd',country:'CH',city:'Zurich',lon:8.5,lat:47.4,ports:[102,502],cves:[]},
+    {ip:'10.0.3.11',org:'Honeywell',country:'US',city:'Charlotte',lon:-80.8,lat:35.2,ports:[502,44818,102,80],cves:[{id:'CVE-2023-5400',score:9.9}]},
+    {ip:'10.0.4.1',org:'Yokogawa',country:'JP',city:'Tokyo',lon:139.7,lat:35.7,ports:[502,102],cves:[{id:'CVE-2021-27480',score:6.3}]},
+    {ip:'10.0.4.2',org:'Emerson Electric',country:'US',city:'St Louis',lon:-90.2,lat:38.6,ports:[44818,502,80],cves:[{id:'CVE-2022-29957',score:7.8}]},
+    {ip:'10.0.5.100',org:'Mitsubishi Electric',country:'JP',city:'Osaka',lon:135.5,lat:34.7,ports:[502],cves:[{id:'CVE-2021-20587',score:9.1}]},
+    {ip:'10.0.5.101',org:'Rockwell Automation',country:'US',city:'Cleveland',lon:-81.7,lat:41.5,ports:[44818,502,102,80,443],cves:[{id:'CVE-2023-3595',score:9.8},{id:'CVE-2023-3596',score:7.5}]}
+  ],
+  healthcare: [
+    {ip:'172.16.1.10',org:'Epic Systems',country:'US',city:'Madison',lon:-89.4,lat:43.1,ports:[104,2575,443,80],cves:[]},
+    {ip:'172.16.1.11',org:'Cerner Health',country:'US',city:'Kansas City',lon:-94.6,lat:39.1,ports:[11112,104,443],cves:[{id:'CVE-2022-1234',score:3.5}]},
+    {ip:'172.16.2.20',org:'Philips Healthcare',country:'NL',city:'Eindhoven',lon:5.5,lat:51.4,ports:[104,11112,80,443],cves:[{id:'CVE-2021-39369',score:5.2}]},
+    {ip:'172.16.2.21',org:'GE Healthcare',country:'US',city:'Chicago',lon:-87.6,lat:41.9,ports:[104,2575,11112,443],cves:[]},
+    {ip:'172.16.3.5',org:'Siemens Healthineers',country:'DE',city:'Erlangen',lon:11.0,lat:49.6,ports:[104,11112,80],cves:[{id:'CVE-2023-7890',score:4.1}]},
+    {ip:'172.16.3.6',org:'McKesson Corp',country:'US',city:'San Francisco',lon:-122.4,lat:37.8,ports:[2575,443,80,22],cves:[]},
+    {ip:'172.16.4.1',org:'Allscripts',country:'US',city:'Chicago',lon:-87.6,lat:41.9,ports:[104,443,80],cves:[]},
+    {ip:'172.16.4.2',org:'Meditech',country:'US',city:'Boston',lon:-71.1,lat:42.4,ports:[2575,104,443],cves:[{id:'CVE-2022-5551',score:2.8}]},
+    {ip:'172.16.5.10',org:'NHS Digital',country:'GB',city:'Leeds',lon:-1.5,lat:53.8,ports:[104,11112,2575,80,443],cves:[{id:'CVE-2023-1100',score:6.1}]},
+    {ip:'172.16.5.11',org:'Agfa Healthcare',country:'BE',city:'Mortsel',lon:4.5,lat:51.2,ports:[104,11112],cves:[]}
+  ],
+  fortune500: [
+    {ip:'52.84.100.1',org:'Apple Inc',country:'US',city:'Cupertino',lon:-122.0,lat:37.3,ports:[80,443,22,8080,8443,993,25,587,53],cves:[]},
+    {ip:'52.84.100.2',org:'JPMorgan Chase',country:'US',city:'New York',lon:-74.0,lat:40.7,ports:[443,80,22,8443,993,5432,6379,8080,3306],cves:[{id:'CVE-2023-0001',score:2.1}]},
+    {ip:'52.84.100.3',org:'Walmart Inc',country:'US',city:'Bentonville',lon:-94.2,lat:36.4,ports:[443,80,8080,8443,22,3306,27017],cves:[]},
+    {ip:'52.84.100.4',org:'ExxonMobil',country:'US',city:'Houston',lon:-95.4,lat:29.8,ports:[443,80,22,25,110,143,993,5432],cves:[]},
+    {ip:'52.84.100.5',org:'Samsung Electronics',country:'KR',city:'Seoul',lon:127.0,lat:37.6,ports:[443,80,22,8080,3389,5900,3306,6379,27017,8443],cves:[{id:'CVE-2023-2222',score:4.5}]},
+    {ip:'52.84.100.6',org:'Toyota Motor',country:'JP',city:'Toyota City',lon:137.2,lat:35.1,ports:[443,80,22,8080,8443,25,993],cves:[]},
+    {ip:'52.84.100.7',org:'Berkshire Hathaway',country:'US',city:'Omaha',lon:-96.0,lat:41.3,ports:[443,80,22,25,8080,3306,5432,6379],cves:[{id:'CVE-2022-9999',score:3.8}]},
+    {ip:'52.84.100.8',org:'Shell plc',country:'GB',city:'London',lon:-0.1,lat:51.5,ports:[443,80,22,8443,5432,6379,8080,25,993,143],cves:[]},
+    {ip:'52.84.100.9',org:'Volkswagen AG',country:'DE',city:'Wolfsburg',lon:10.8,lat:52.4,ports:[443,80,22,8080,3306],cves:[]},
+    {ip:'52.84.100.10',org:'Sinopec Group',country:'CN',city:'Beijing',lon:116.4,lat:39.9,ports:[443,80,22,8080,8443,3306,6379,27017,5432],cves:[{id:'CVE-2024-1111',score:6.9}]}
+  ],
+  iot: [
+    {ip:'192.168.1.50',org:'Philips Hue',country:'NL',city:'Eindhoven',lon:5.5,lat:51.4,ports:[1883,80,443],cves:[{id:'CVE-2020-6007',score:6.5}]},
+    {ip:'192.168.1.51',org:'Ring Doorbell',country:'US',city:'Santa Monica',lon:-118.5,lat:34.0,ports:[8883,443,5683],cves:[{id:'CVE-2022-0001',score:7.2}]},
+    {ip:'192.168.1.52',org:'Nest Labs',country:'US',city:'Palo Alto',lon:-122.1,lat:37.4,ports:[1883,8883,443],cves:[]},
+    {ip:'192.168.1.53',org:'TP-Link',country:'CN',city:'Shenzhen',lon:114.1,lat:22.5,ports:[80,1883,5683,23],cves:[{id:'CVE-2023-1389',score:8.8}]},
+    {ip:'192.168.1.54',org:'Wyze Labs',country:'US',city:'Seattle',lon:-122.3,lat:47.6,ports:[1883,8883,80],cves:[{id:'CVE-2023-6321',score:5.5}]},
+    {ip:'192.168.1.55',org:'Tuya Smart',country:'CN',city:'Hangzhou',lon:120.2,lat:30.3,ports:[1883,5683,8883,80,443],cves:[{id:'CVE-2021-28372',score:9.1}]},
+    {ip:'192.168.1.56',org:'Sonos',country:'US',city:'Santa Barbara',lon:-119.7,lat:34.4,ports:[1883,80,443,5683],cves:[]},
+    {ip:'192.168.1.57',org:'Hikvision',country:'CN',city:'Hangzhou',lon:120.2,lat:30.3,ports:[80,443,8080,1883],cves:[{id:'CVE-2021-36260',score:9.8}]},
+    {ip:'192.168.1.58',org:'Xiaomi',country:'CN',city:'Beijing',lon:116.4,lat:39.9,ports:[1883,5683,80],cves:[{id:'CVE-2023-2200',score:4.2}]},
+    {ip:'192.168.1.59',org:'Arduino IoT',country:'IT',city:'Turin',lon:7.7,lat:45.1,ports:[1883,5683],cves:[]},
+    {ip:'192.168.1.60',org:'Raspberry Pi',country:'GB',city:'Cambridge',lon:0.1,lat:52.2,ports:[22,1883,8883,80,5683],cves:[]}
+  ],
+  darkweb: [
+    {ip:'10.66.0.1',org:'[Anonymous]',country:'??',city:'Unknown',lon:0,lat:0,ports:[9050],cves:[{id:'CVE-2021-99999',score:9.5}]},
+    {ip:'10.66.0.2',org:'[Hidden Service]',country:'RO',city:'Bucharest',lon:26.1,lat:44.4,ports:[9050,9150,80],cves:[{id:'CVE-2022-88888',score:8.7}]},
+    {ip:'10.66.0.3',org:'[Tor Relay]',country:'IS',city:'Reykjavik',lon:-22.0,lat:64.1,ports:[9050,9150],cves:[]},
+    {ip:'10.66.0.4',org:'[Exit Node]',country:'NL',city:'Amsterdam',lon:4.9,lat:52.4,ports:[9050,443],cves:[{id:'CVE-2023-77777',score:9.9}]},
+    {ip:'10.66.0.5',org:'[Bridge Relay]',country:'SE',city:'Stockholm',lon:18.1,lat:59.3,ports:[9050,9150],cves:[{id:'CVE-2023-66666',score:7.3}]},
+    {ip:'10.66.0.6',org:'[Anonymous]',country:'RU',city:'Moscow',lon:37.6,lat:55.8,ports:[9050],cves:[{id:'CVE-2024-11111',score:10.0}]},
+    {ip:'10.66.0.7',org:'[Hidden Service]',country:'??',city:'Unknown',lon:-30,lat:20,ports:[9050,9150,80],cves:[{id:'CVE-2022-55555',score:8.2},{id:'CVE-2023-44444',score:9.1}]},
+    {ip:'10.66.0.8',org:'[Tor Relay]',country:'DE',city:'Berlin',lon:13.4,lat:52.5,ports:[9050],cves:[]}
+  ]
+};
+
+// ============ APP STATE ============
+let audioCtx = null;
+let masterGain = null;
+let analyser = null;
+let hosts = [];
+let currentHostIndex = 0;
+let isPlaying = false;
+let isLooping = true;
+let tempo = 90;
+let currentScale = 'minor';
+let animationId = null;
+let scheduledNotes = [];
+let nextNoteTime = 0;
+let measureStartTime = 0;
+let particles = [];
+let constellationPoints = [];
+let mediaRecorder = null;
+let isRecording = false;
+let recordedChunks = [];
+
+// ============ INIT ============
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.7;
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  masterGain.connect(analyser);
+  analyser.connect(audioCtx.destination);
+}
+
+// ============ SONIFICATION ENGINE ============
+function getFrequency(port) {
+  const scale = SCALES[currentScale];
+  let noteName = PORT_NOTE_MAP[port];
+  if (!noteName) {
+    const idx = port % scale.length;
+    noteName = scale[idx];
+  }
+  return NOTE_FREQS[noteName] || 220;
+}
+
+function getNoteName(port) {
+  const scale = SCALES[currentScale];
+  let noteName = PORT_NOTE_MAP[port];
+  if (!noteName) {
+    const idx = port % scale.length;
+    noteName = scale[idx];
+  }
+  return noteName || '?';
+}
+
+function getProtocol(port) {
+  return PORT_PROTOCOL[port] || 'Unknown';
+}
+
+function getOscType(protocol) {
+  switch(protocol) {
+    case 'HTTP': case 'HTTPS': case 'IMAPS': return 'sine';
+    case 'SSH': return 'triangle';
+    case 'FTP': return 'sawtooth';
+    case 'SMB': return 'square';
+    case 'SMTP': case 'POP3': case 'IMAP': return 'sine'; // + vibrato
+    case 'RDP': case 'VNC': return 'sawtooth'; // detuned
+    case 'Telnet': return 'sine'; // bitcrushed
+    case 'Modbus': case 'S7': case 'EtherNet/IP': return 'sawtooth';
+    case 'DICOM': case 'HL7': return 'sine';
+    case 'MQTT': case 'MQTTS': case 'CoAP': return 'triangle';
+    case 'Tor': return 'square';
+    default: return 'sine';
+  }
+}
+
+function getProtocolColor(protocol) {
+  switch(protocol) {
+    case 'HTTP': case 'HTTPS': return '#06b6d4';
+    case 'SSH': return '#10b981';
+    case 'FTP': return '#f59e0b';
+    case 'SMB': return '#ef4444';
+    case 'SMTP': case 'POP3': case 'IMAP': return '#8b5cf6';
+    case 'RDP': case 'VNC': return '#ec4899';
+    case 'Telnet': return '#ef4444';
+    case 'Modbus': case 'S7': case 'EtherNet/IP': return '#f97316';
+    case 'DICOM': case 'HL7': return '#6ee7b7';
+    case 'MQTT': case 'MQTTS': case 'CoAP': return '#a78bfa';
+    case 'Tor': return '#1e1b4b';
+    default: return '#64748b';
+  }
+}
+
+function getMaxCVE(host) {
+  if (!host.cves || host.cves.length === 0) return 0;
+  return Math.max(...host.cves.map(c => c.score));
+}
+
+function playNote(freq, oscType, protocol, startTime, duration, pan, cveScore, host) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+  const panner = audioCtx.createStereoPanner();
+  const filter = audioCtx.createBiquadFilter();
+
+  osc.type = oscType;
+  osc.frequency.value = freq;
+  panner.pan.value = Math.max(-1, Math.min(1, pan));
+
+  filter.type = 'lowpass';
+  filter.frequency.value = 2000 + (1 - cveScore/10) * 6000;
+  filter.Q.value = 1 + cveScore * 0.5;
+
+  // Envelope
+  gainNode.gain.setValueAtTime(0, startTime);
+  gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.02);
+  gainNode.gain.exponentialRampToValueAtTime(0.15, startTime + duration * 0.3);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+  // Protocol-specific effects
+  if (protocol === 'SMTP' || protocol === 'POP3' || protocol === 'IMAP') {
+    // Vibrato
+    const lfo = audioCtx.createOscillator();
+    const lfoGain = audioCtx.createGain();
+    lfo.frequency.value = 5;
+    lfoGain.gain.value = 3;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    lfo.start(startTime);
+    lfo.stop(startTime + duration);
+  }
+
+  if (protocol === 'RDP' || protocol === 'VNC') {
+    // Detune
+    osc.detune.value = -15;
+    const osc2 = audioCtx.createOscillator();
+    osc2.type = 'sawtooth';
+    osc2.frequency.value = freq * 1.005;
+    osc2.detune.value = 15;
+    const g2 = audioCtx.createGain();
+    g2.gain.setValueAtTime(0, startTime);
+    g2.gain.linearRampToValueAtTime(0.15, startTime + 0.02);
+    g2.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+    osc2.connect(g2);
+    g2.connect(filter);
+    osc2.start(startTime);
+    osc2.stop(startTime + duration);
+  }
+
+  // CVE effects
+  if (cveScore >= 7) {
+    // Distortion via waveshaper
+    const waveshaper = audioCtx.createWaveShaper();
+    const amount = cveScore >= 9 ? 80 : 40;
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) {
+      const x = (i * 2) / 256 - 1;
+      curve[i] = (Math.PI + amount) * x / (Math.PI + amount * Math.abs(x));
+    }
+    waveshaper.curve = curve;
+    osc.connect(gainNode);
+    gainNode.connect(waveshaper);
+    waveshaper.connect(filter);
+  } else {
+    osc.connect(gainNode);
+    gainNode.connect(filter);
+  }
+
+  if (cveScore >= 7) {
+    // Tremolo
+    const tremolo = audioCtx.createOscillator();
+    const tremoloGain = audioCtx.createGain();
+    tremolo.frequency.value = cveScore >= 9 ? 12 : 6;
+    tremoloGain.gain.value = 0.3;
+    tremolo.connect(tremoloGain);
+    tremoloGain.connect(gainNode.gain);
+    tremolo.start(startTime);
+    tremolo.stop(startTime + duration);
+  }
+
+  if (cveScore >= 4 && cveScore < 7) {
+    // Filter sweep
+    filter.frequency.setValueAtTime(800, startTime);
+    filter.frequency.linearRampToValueAtTime(4000, startTime + duration * 0.5);
+    filter.frequency.linearRampToValueAtTime(800, startTime + duration);
+  }
+
+  filter.connect(panner);
+  panner.connect(masterGain);
+
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+
+  // Spawn particle
+  const color = getProtocolColor(protocol);
+  setTimeout(() => {
+    spawnParticle(freq, color, cveScore);
+  }, Math.max(0, (startTime - audioCtx.currentTime) * 1000));
+}
+
+function sonifyHost(host, startTime) {
+  const ports = host.ports || [];
+  const numPorts = ports.length;
+  const cveScore = getMaxCVE(host);
+  const pan = host.lon ? host.lon / 180 : 0;
+  const measureDuration = (60 / tempo) * 4; // 4 beats per measure
+
+  if (numPorts <= 3) {
+    // Sparse ambient pads
+    ports.forEach((port, i) => {
+      const freq = getFrequency(port);
+      const protocol = getProtocol(port);
+      const oscType = getOscType(protocol);
+      const noteStart = startTime + (i * measureDuration / Math.max(numPorts, 1));
+      const noteDur = measureDuration * 0.8;
+      playNote(freq, oscType, protocol, noteStart, noteDur, pan, cveScore, host);
+    });
+  } else if (numPorts <= 7) {
+    // Rhythmic arpeggios
+    const beatDur = 60 / tempo;
+    ports.forEach((port, i) => {
+      const freq = getFrequency(port);
+      const protocol = getProtocol(port);
+      const oscType = getOscType(protocol);
+      const noteStart = startTime + (i * beatDur * (4 / numPorts));
+      const noteDur = beatDur * 0.7;
+      playNote(freq, oscType, protocol, noteStart, noteDur, pan, cveScore, host);
+    });
+  } else {
+    // Dense rapid sequences
+    const sixteenth = (60 / tempo) / 4;
+    ports.forEach((port, i) => {
+      const freq = getFrequency(port);
+      const protocol = getProtocol(port);
+      const oscType = getOscType(protocol);
+      const noteStart = startTime + (i * sixteenth);
+      const noteDur = sixteenth * 0.8;
+      playNote(freq, oscType, protocol, noteStart, noteDur, pan + (i % 2 === 0 ? -0.1 : 0.1), cveScore, host);
+    });
+  }
+
+  // Add sub-bass drone based on host
+  const subOsc = audioCtx.createOscillator();
+  const subGain = audioCtx.createGain();
+  subOsc.type = 'sine';
+  subOsc.frequency.value = 40 + (cveScore * 5);
+  subGain.gain.setValueAtTime(0, startTime);
+  subGain.gain.linearRampToValueAtTime(0.08, startTime + 0.5);
+  subGain.gain.setValueAtTime(0.08, startTime + measureDuration - 0.5);
+  subGain.gain.linearRampToValueAtTime(0, startTime + measureDuration);
+  subOsc.connect(subGain);
+  subGain.connect(masterGain);
+  subOsc.start(startTime);
+  subOsc.stop(startTime + measureDuration);
+}
+
+function startPlayback() {
+  if (hosts.length === 0) return;
+  initAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  isPlaying = true;
+  document.getElementById('playPauseBtn').textContent = '⏸';
+  measureStartTime = audioCtx.currentTime + 0.1;
+  scheduleNextHost();
+}
+
+function scheduleNextHost() {
+  if (!isPlaying || hosts.length === 0) return;
+  const host = hosts[currentHostIndex];
+  const measureDuration = (60 / tempo) * 4;
+
+  sonifyHost(host, measureStartTime);
+  updateNowPlaying(host);
+  updateOverlay(host);
+  updateDataPanel();
+
+  // Schedule next
+  setTimeout(() => {
+    if (!isPlaying) return;
+    currentHostIndex++;
+    if (currentHostIndex >= hosts.length) {
+      if (isLooping) {
+        currentHostIndex = 0;
+      } else {
+        stopPlayback();
+        return;
+      }
+    }
+    measureStartTime += measureDuration;
+    scheduleNextHost();
+  }, measureDuration * 1000);
+}
+
+function stopPlayback() {
+  isPlaying = false;
+  document.getElementById('playPauseBtn').textContent = '▶';
+}
+
+function togglePlayPause() {
+  if (isPlaying) {
+    stopPlayback();
+  } else {
+    startPlayback();
+  }
+}
+
+function skipHost() {
+  if (hosts.length === 0) return;
+  currentHostIndex = (currentHostIndex + 1) % hosts.length;
+  if (isPlaying) {
+    measureStartTime = audioCtx.currentTime + 0.1;
+    const host = hosts[currentHostIndex];
+    const measureDuration = (60 / tempo) * 4;
+    sonifyHost(host, measureStartTime);
+    updateNowPlaying(host);
+    updateOverlay(host);
+    updateDataPanel();
+  }
+}
+
+// ============ UI UPDATES ============
+function updateNowPlaying(host) {
+  document.getElementById('nowIp').textContent = host.ip;
+  document.getElementById('nowOrg').textContent = host.org;
+  document.getElementById('nowCountry').textContent = host.country;
+  document.getElementById('progressText').textContent = `Host ${currentHostIndex + 1} of ${hosts.length}`;
+}
+
+function updateOverlay(host) {
+  const overlay = document.getElementById('hostOverlay');
+  overlay.style.display = 'block';
+  document.getElementById('overlayIp').textContent = host.ip;
+  document.getElementById('overlayOrg').textContent = host.org;
+  document.getElementById('overlayLocation').textContent = `${host.city}, ${host.country} (${host.lon?.toFixed(1)}, ${host.lat?.toFixed(1)})`;
+  document.getElementById('overlayPorts').textContent = `Ports: ${host.ports.join(', ')}`;
+  const cveText = host.cves.length > 0 ? host.cves.map(c => `${c.id} (${c.score})`).join(', ') : 'None';
+  document.getElementById('overlayCves').textContent = `CVEs: ${cveText}`;
+}
+
+function updateDataPanel() {
+  const tbody = document.getElementById('hostTable').querySelector('tbody');
+  tbody.innerHTML = hosts.map((h, i) => `
+    <tr class="${i === currentHostIndex ? 'active' : ''}">
+      <td>${i + 1}</td>
+      <td style="color:var(--cyan)">${h.ip}</td>
+      <td>${h.ports.length}</td>
+      <td>${h.country}</td>
+    </tr>
+  `).join('');
+
+  // Note mapping
+  const host = hosts[currentHostIndex];
+  const mappingDiv = document.getElementById('noteMapping');
+  if (host) {
+    mappingDiv.innerHTML = host.ports.map(p => `
+      <div class="mapping-row">
+        <span class="port-col">:${p} (${getProtocol(p)})</span>
+        <span class="note-col">${getNoteName(p)} → ${getFrequency(p).toFixed(0)}Hz</span>
+      </div>
+    `).join('');
+  }
+
+  // Mini map
+  drawMiniMap();
+}
+
+function drawMiniMap() {
+  const canvas = document.getElementById('miniMap');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth * 2;
+  canvas.height = canvas.offsetHeight * 2;
+  ctx.scale(2, 2);
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, w, h);
+
+  // Simple world outline
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(10, 10, w - 20, h - 20);
+
+  // Grid
+  ctx.strokeStyle = '#1a1a2e';
+  for (let i = 0; i < 5; i++) {
+    const x = 10 + (i / 4) * (w - 20);
+    ctx.beginPath(); ctx.moveTo(x, 10); ctx.lineTo(x, h - 10); ctx.stroke();
+  }
+  for (let i = 0; i < 3; i++) {
+    const y = 10 + (i / 2) * (h - 20);
+    ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(w - 10, y); ctx.stroke();
+  }
+
+  // Plot hosts
+  hosts.forEach((host, i) => {
+    if (host.lon == null || host.lat == null) return;
+    const x = 10 + ((host.lon + 180) / 360) * (w - 20);
+    const y = 10 + ((90 - host.lat) / 180) * (h - 20);
+    ctx.beginPath();
+    ctx.arc(x, y, i === currentHostIndex ? 4 : 2, 0, Math.PI * 2);
+    ctx.fillStyle = i === currentHostIndex ? '#06b6d4' : '#6366f1';
+    ctx.fill();
+    if (i === currentHostIndex) {
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+}
+
+// ============ VISUALIZER ============
+function spawnParticle(freq, color, severity) {
+  const angle = Math.random() * Math.PI * 2;
+  const speed = 1 + Math.random() * 2;
+  particles.push({
+    x: 0, y: 0,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    life: 1.0,
+    decay: 0.01 + severity * 0.005,
+    color: color,
+    size: 2 + (freq / 200)
+  });
+}
+
+function initConstellation() {
+  constellationPoints = [];
+  for (let i = 0; i < 60; i++) {
+    constellationPoints.push({
+      x: Math.random() * 2 - 1,
+      y: Math.random() * 2 - 1,
+      z: Math.random(),
+      connections: []
+    });
+  }
+  // Connect nearby points
+  for (let i = 0; i < constellationPoints.length; i++) {
+    for (let j = i + 1; j < constellationPoints.length; j++) {
+      const dx = constellationPoints[i].x - constellationPoints[j].x;
+      const dy = constellationPoints[i].y - constellationPoints[j].y;
+      if (Math.sqrt(dx*dx + dy*dy) < 0.4) {
+        constellationPoints[i].connections.push(j);
+      }
+    }
+  }
+}
+
+function drawVisualizer() {
+  const canvas = document.getElementById('visualizer');
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * window.devicePixelRatio;
+  canvas.height = rect.height * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  const w = rect.width;
+  const h = rect.height;
+  const cx = w / 2;
+  const cy = h / 2;
+
+  // Background
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
+  ctx.fillRect(0, 0, w, h);
+
+  const time = Date.now() / 1000;
+
+  // Constellation background
+  ctx.save();
+  ctx.translate(cx, cy);
+  const rot = time * 0.05;
+  ctx.rotate(rot);
+  ctx.globalAlpha = 0.3;
+  constellationPoints.forEach((p, i) => {
+    const px = p.x * (w * 0.4);
+    const py = p.y * (h * 0.4);
+    ctx.fillStyle = `rgba(99, 102, 241, ${0.3 + p.z * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(px, py, 1 + p.z, 0, Math.PI * 2);
+    ctx.fill();
+    // Draw connections
+    p.connections.forEach(j => {
+      const p2 = constellationPoints[j];
+      ctx.strokeStyle = `rgba(99, 102, 241, ${0.1 + p.z * 0.1})`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(p2.x * (w * 0.4), p2.y * (h * 0.4));
+      ctx.stroke();
+    });
+  });
+  ctx.restore();
+
+  // Audio data
+  let dataArray;
+  let freqArray;
+  if (analyser) {
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(dataArray);
+    freqArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(freqArray);
+  } else {
+    dataArray = new Uint8Array(1024).fill(128);
+    freqArray = new Uint8Array(1024).fill(0);
+  }
+
+  // Circular waveform (radar style)
+  const radius = Math.min(w, h) * 0.25;
+  const avgFreq = freqArray ? Array.from(freqArray.slice(0, 64)).reduce((a,b) => a+b, 0) / 64 : 0;
+  const pulseScale = 1 + (avgFreq / 255) * 0.3;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // Radar rings
+  for (let r = 0; r < 3; r++) {
+    ctx.strokeStyle = `rgba(99, 102, 241, ${0.1 - r * 0.03})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * pulseScale * (0.5 + r * 0.3), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Waveform circle
+  ctx.strokeStyle = '#06b6d4';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#06b6d4';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  const step = Math.floor(dataArray.length / 128);
+  for (let i = 0; i < 128; i++) {
+    const angle = (i / 128) * Math.PI * 2 - Math.PI / 2;
+    const val = (dataArray[i * step] - 128) / 128;
+    const r = radius * pulseScale + val * radius * 0.5;
+    const x = Math.cos(angle) * r;
+    const y = Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Inner glow
+  const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * pulseScale);
+  gradient.addColorStop(0, `rgba(99, 102, 241, ${0.05 + avgFreq/255 * 0.1})`);
+  gradient.addColorStop(1, 'rgba(10, 10, 15, 0)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * pulseScale, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Frequency bars (radial)
+  const barCount = 32;
+  for (let i = 0; i < barCount; i++) {
+    const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
+    const val = freqArray[i * 4] / 255;
+    const barLen = val * radius * 0.6;
+    const x1 = Math.cos(angle) * (radius * pulseScale + 5);
+    const y1 = Math.sin(angle) * (radius * pulseScale + 5);
+    const x2 = Math.cos(angle) * (radius * pulseScale + 5 + barLen);
+    const y2 = Math.sin(angle) * (radius * pulseScale + 5 + barLen);
+    ctx.strokeStyle = `rgba(6, 182, 212, ${0.3 + val * 0.7})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // Particles
+  particles.forEach((p, i) => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); return; }
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.arc(cx + p.x * 20, cy + p.y * 20, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  });
+
+  // Scan line
+  const scanAngle = time * 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(scanAngle);
+  const scanGrad = ctx.createLinearGradient(0, 0, radius * 1.5, 0);
+  scanGrad.addColorStop(0, 'rgba(6, 182, 212, 0.3)');
+  scanGrad.addColorStop(1, 'rgba(6, 182, 212, 0)');
+  ctx.strokeStyle = scanGrad;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(radius * 1.5, 0);
+  ctx.stroke();
+  ctx.restore();
+
+  animationId = requestAnimationFrame(drawVisualizer);
+}
+
+// ============ DATA FETCHING ============
+async function fetchData(query) {
+  try {
+    const resp = await fetch(`http://localhost:5000/api/shodan?query=${encodeURIComponent(query)}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.length > 0) return data;
+    }
+  } catch(e) {}
+  return null;
+}
+
+function getSimulatedData(preset) {
+  if (SIMULATED_DATA[preset]) return SIMULATED_DATA[preset];
+  return SIMULATED_DATA.random;
+}
+
+async function sonify(query, preset) {
+  initAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  // Try API first, fallback to simulated
+  let data = null;
+  if (!preset) {
+    data = await fetchData(query);
+  }
+  if (!data) {
+    const presetKey = preset || 'random';
+    data = getSimulatedData(presetKey);
+  }
+
+  hosts = data;
+  currentHostIndex = 0;
+
+  if (isPlaying) stopPlayback();
+  startPlayback();
+  updateDataPanel();
+}
+
+// ============ RECORDING ============
+function toggleRecording() {
+  if (!audioCtx) return;
+  if (!isRecording) {
+    const dest = audioCtx.createMediaStreamDestination();
+    masterGain.connect(dest);
+    mediaRecorder = new MediaRecorder(dest.stream);
+    recordedChunks = [];
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sound-of-internet-${Date.now()}.webm`;
+      a.click();
+      masterGain.disconnect(dest);
+    };
+    mediaRecorder.start();
+    isRecording = true;
+    document.getElementById('recordBtn').classList.add('active');
+    document.getElementById('recordBtn').style.background = '#ef4444';
+  } else {
+    mediaRecorder.stop();
+    isRecording = false;
+    document.getElementById('recordBtn').classList.remove('active');
+    document.getElementById('recordBtn').style.background = '';
+  }
+}
+
+// ============ EVENT LISTENERS ============
+document.getElementById('sonifyBtn').addEventListener('click', () => {
+  const query = document.getElementById('queryInput').value.trim();
+  if (query) sonify(query, null);
+});
+
+document.getElementById('queryInput').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    const query = e.target.value.trim();
+    if (query) sonify(query, null);
+  }
+});
+
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const preset = btn.dataset.preset;
+    document.getElementById('queryInput').value = preset === 'random' ? 'random' :
+      preset === 'scada' ? 'port:502 product:modbus' :
+      preset === 'healthcare' ? 'port:104 product:dicom' :
+      preset === 'fortune500' ? 'org:"Fortune 500"' :
+      preset === 'iot' ? 'port:1883 product:mqtt' :
+      'port:9050 product:tor';
+    sonify(null, preset);
+  });
+});
+
+document.getElementById('tempoSlider').addEventListener('input', (e) => {
+  tempo = parseInt(e.target.value);
+  document.getElementById('tempoValue').textContent = tempo;
+});
+
+document.getElementById('scaleSelect').addEventListener('change', (e) => {
+  currentScale = e.target.value;
+});
+
+document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause);
+document.getElementById('skipBtn').addEventListener('click', skipHost);
+document.getElementById('loopBtn').addEventListener('click', () => {
+  isLooping = !isLooping;
+  document.getElementById('loopBtn').classList.toggle('active', isLooping);
+});
+document.getElementById('recordBtn').addEventListener('click', toggleRecording);
+
+document.getElementById('volumeSlider').addEventListener('input', (e) => {
+  if (masterGain) masterGain.gain.value = e.target.value / 100;
+});
+
+document.getElementById('togglePanel').addEventListener('click', () => {
+  const panel = document.getElementById('dataPanel');
+  panel.classList.toggle('open');
+  document.getElementById('togglePanel').textContent = panel.classList.contains('open') ? '▶' : '◀';
+});
+
+// Init
+initConstellation();
+drawVisualizer();
+document.getElementById('loopBtn').classList.add('active');
+</script>
+</body>
+</html>
