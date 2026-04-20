@@ -963,13 +963,36 @@ function drawVisualizer() {
 // ============ DATA FETCHING ============
 async function fetchData(query) {
   try {
-    const resp = await fetch(`http://localhost:5000/api/shodan?query=${encodeURIComponent(query)}`);
+    const resp = await fetch(`http://localhost:5003/api/shodan?query=${encodeURIComponent(query)}`);
     if (resp.ok) {
-      const data = await resp.json();
-      if (data && data.length > 0) return data;
+      const json = await resp.json();
+      if (json && json.hosts && json.hosts.length > 0) {
+        updateSourceBadge(json.source || 'unknown');
+        return json.hosts;
+      }
     }
   } catch(e) {}
+  updateSourceBadge('simulated');
   return null;
+}
+
+function updateSourceBadge(source) {
+  let badge = document.getElementById('source-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'source-badge';
+    badge.style.cssText = 'position:fixed;top:10px;right:10px;padding:4px 12px;border-radius:4px;font-family:monospace;font-size:12px;z-index:9999;';
+    document.body.appendChild(badge);
+  }
+  if (source === 'shodan') {
+    badge.textContent = '● LIVE [SHODAN]';
+    badge.style.background = '#0f2';
+    badge.style.color = '#000';
+  } else {
+    badge.textContent = '○ SIMULATED';
+    badge.style.background = '#fa0';
+    badge.style.color = '#000';
+  }
 }
 
 function getSimulatedData(preset) {
