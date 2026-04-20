@@ -8,6 +8,8 @@ What does the internet sound like? This app converts [Shodan](https://www.shodan
 
 Every host is a voice. Every open port is a note. The internet is an orchestra — and most of it is out of tune.
 
+![Screenshot](screenshot.png)
+
 ## 🎼 Sonification Mapping
 
 | Network Property | Musical Parameter | How It Works |
